@@ -38,7 +38,7 @@ const createTask = catchAsync(async (req, res) => {
   const newTask = await Task.create({ name, description, dueDate, status });
   res.status(201).json({
     status: "success",
-    savedTask,
+    newTask,
   });
 });
 
