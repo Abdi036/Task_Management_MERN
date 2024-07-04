@@ -1,4 +1,5 @@
 const Task = require("../Models/TaskModel");
+const AppError = require("../utils/appError");
 const catchAsync = require("../utils/catchAsync");
 
 // Get All tasks
@@ -19,12 +20,7 @@ const getTask = catchAsync(async (req, res, next) => {
   const task = await Task.findById(id);
 
   if (!task) {
-    return next(
-      res.status(404).json({
-        status: "fail",
-        message: "Task not found",
-      })
-    );
+    return next(new AppError("task not Found", 404));
   }
 
   res.status(200).json({
@@ -56,9 +52,7 @@ const updateTask = catchAsync(async (req, res, next) => {
     { new: true }
   );
   if (!updatedTask) {
-    return next(
-      res.status(404).json({ status: "fail", message: "Task not found" })
-    );
+    return next(new AppError("task not found", 404));
   }
   res.status(200).json({
     status: "success",
@@ -72,12 +66,7 @@ const deleteTask = catchAsync(async (req, res, next) => {
   const { id } = req.params;
   const task = await Task.findByIdAndDelete(id);
   if (!task) {
-    return next(
-      res.status(404).json({
-        status: "fail",
-        mesage: "Task not found",
-      })
-    );
+    return next(new AppError("task not found", 404));
   }
   res.status(200).json({
     status: "success",
