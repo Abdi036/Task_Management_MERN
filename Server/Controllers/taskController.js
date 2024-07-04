@@ -2,7 +2,7 @@ const Task = require("../Models/TaskModel");
 const catchAsync = require("../utils/catchAsync");
 
 // Get All tasks
-const getAllTasks = catchAsync(async (req, res) => {
+const getAllTasks = catchAsync(async (req, res, next) => {
   const tasks = await Task.find();
   res.status(200).json({
     status: "success",
@@ -14,15 +14,17 @@ const getAllTasks = catchAsync(async (req, res) => {
 });
 
 // Get task by ID
-const getTask = catchAsync(async (req, res) => {
+const getTask = catchAsync(async (req, res, next) => {
   const { id } = req.params;
   const task = await Task.findById(id);
 
   if (!task) {
-    return res.status(404).json({
-      status: "fail",
-      message: "Task not found",
-    });
+    return next(
+      res.status(404).json({
+        status: "fail",
+        message: "Task not found",
+      })
+    );
   }
 
   res.status(200).json({
@@ -33,7 +35,7 @@ const getTask = catchAsync(async (req, res) => {
 
 // create a task
 
-const createTask = catchAsync(async (req, res) => {
+const createTask = catchAsync(async (req, res, next) => {
   const { name, description, dueDate, status } = req.body;
   const newTask = await Task.create({ name, description, dueDate, status });
   res.status(201).json({
@@ -44,7 +46,7 @@ const createTask = catchAsync(async (req, res) => {
 
 // update Task
 
-const updateTask = catchAsync(async (req, res) => {
+const updateTask = catchAsync(async (req, res, next) => {
   const { id } = req.params;
   const { name, description, dueDate, status } = req.body;
 
@@ -53,6 +55,11 @@ const updateTask = catchAsync(async (req, res) => {
     { name, description, dueDate, status },
     { new: true }
   );
+  if (!updatedTask) {
+    return next(
+      res.status(404).json({ status: "fail", message: "Task not found" })
+    );
+  }
   res.status(200).json({
     status: "success",
     updatedTask,
@@ -61,9 +68,17 @@ const updateTask = catchAsync(async (req, res) => {
 
 // delete task
 
-const deleteTask = catchAsync(async (req, res) => {
+const deleteTask = catchAsync(async (req, res, next) => {
   const { id } = req.params;
-  await Task.findByIdAndDelete(id);
+  const task = await Task.findByIdAndDelete(id);
+  if (!task) {
+    return next(
+      res.status(404).json({
+        status: "fail",
+        mesage: "Task not found",
+      })
+    );
+  }
   res.status(200).json({
     status: "success",
     message: "task Deleted Successfully",
