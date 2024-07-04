@@ -1,76 +1,71 @@
+
 const jwt = require("jsonwebtoken");
 const User = require("../Models/UserModel");
-const catchAsync = require("../utils/catchAsync");
-const AppError = require("../utils/appError");
+const bcrypt = require("bcryptjs");
+const { promisify } = require("util");
 
-// Protect middleware
-
-exports.protect = async (req, res, next) => {
-  let token;
-
-  if (
-    req.headers.authorization &&
-    req.headers.authorization.startsWith("Bearer")
-  ) {
-    try {
-      token = req.headers.authorization.split(" ")[1];
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      req.user = await User.findById(decoded.id).select("-password");
-      next();
-    } catch (error) {
-      res.status(401).json({ message: "Not authorized, token failed" });
-    }
-  }
-
-  if (!token) {
-    res.status(401).json({ message: "Not authorized, no token" });
-  }
-};
-
-// function to generate a token
+// Function to generate a token
 function generateToken(id) {
-  return jwt.sign({ id }, process.env.JWT_SECRETE, {
+  return jwt.sign({ id }, process.env.JWT_SECRET, {
     expiresIn: process.env.EXPIRES_IN,
   });
 }
 
-// signup user
-
-exports.signUp = catchAsync(async (req, res, next) => {
+// Signup user
+exports.signUp = async (req, res, next) => {
   const { username, email, password } = req.body;
 
-  const userExists = await User.findOne({ email });
+  try {
+    const userExists = await User.findOne({ email });
 
-  if (userExists) {
-    return next(new AppError("user already exists", 400));
-  }
+    if (userExists) {
+      return res.status(400).json({
+        status: "fail",
+        message: "User already exists",
+      });
+    }
 
-  //   hash the password
-  const hashedPassword = await bcrypt.hash(password, 12);
+    const hashedPassword = await bcrypt.hash(password, 12);
 
-  const user = await User.create({ username, email, password: hashedPassword });
-  const token = generateToken(user._id);
-  res.status(201).json({
-    status: "success",
-    data: {
-      user: {
-        _id: user._id,
-        username: user.username,
-        email: user.email,
+    const user = await User.create({
+      username,
+      email,
+      password: hashedPassword,
+    });
+    const token = generateToken(user._id);
+    res.status(201).json({
+      status: "success",
+      data: {
+        user: {
+          username: user.username,
+          email: user.email,
+        },
+        token,
       },
-      token,
-    },
-  });
-});
+    });
+  } catch (err) {
+    res.status(500).json({
+      status: "error",
+      message: err.message,
+    });
+  }
+};
 
-// Login User
-exports.logIn = catchAsync(async (req, res, next) => {
+// Login user
+exports.logIn = async (req, res, next) => {
   const { email, password } = req.body;
 
-  const user = await User.findOne({ email });
-  const token = generateToken(user._id);
+  try {
+    const user = await User.findOne({ email });
 
-  if (user && (await user.matchPassword(password))) {
+    if (!user || !(await user.matchPassword(password))) {
+      return res.status(401).json({
+        status: "fail",
+        message: "Invalid email or password",
+      });
+    }
+
+    const token = generateToken(user._id);
     res.status(200).json({
       status: "success",
       data: {
@@ -81,7 +76,57 @@ exports.logIn = catchAsync(async (req, res, next) => {
         token,
       },
     });
-  } else {
-    return next(new AppError("Invalid email or password", 401));
+  } catch (err) {
+    res.status(500).json({
+      status: "error",
+      message: err.message,
+    });
   }
-});
+};
+
+// Protect middleware
+exports.protectMiddleware = async (req, res, next) => {
+  let token;
+  if (
+    req.headers.authorization &&
+    req.headers.authorization.startsWith("Bearer")
+  ) {
+    token = req.headers.authorization.split(" ")[1];
+  } else if (req.cookies.jwt) {
+    token = req.cookies.jwt;
+  }
+
+  try {
+    if (!token) {
+      return res.status(401).json({
+        status: "fail",
+        message: "You are not logged in! Please log in to get access",
+      });
+    }
+
+    const decoded = await promisify(jwt.verify)(token, process.env.JWT_SECRET);
+
+    const currentUser = await User.findById(decoded.id);
+    if (!currentUser) {
+      return res.status(401).json({
+        status: "fail",
+        message: "The user belonging to this token no longer exists.",
+      });
+    }
+
+    if (currentUser.changedPasswordAfter(decoded.iat)) {
+      return res.status(401).json({
+        status: "fail",
+        message: "User recently changed password! Please log in again.",
+      });
+    }
+
+    req.user = currentUser;
+    next();
+  } catch (err) {
+    res.status(500).json({
+      status: "error",
+      message: err.message,
+    });
+  }
+};
